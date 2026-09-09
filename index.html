@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Khu Vườn Lớp 9/13</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{font-family:'Nunito',sans-serif}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+</style>
+</head>
+<body class="bg-stone-100 text-slate-800">
+<div id="app" class="min-h-screen">
+<header class="bg-white shadow-sm border-b border-green-100 px-4 md:px-6 py-4 flex flex-col md:flex-row justify-between gap-3">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center text-white text-xl"><i class="fa-solid fa-leaf"></i></div>
+    <div><h1 class="text-xl md:text-2xl font-extrabold text-green-800">Khu Vườn Lớp 9/13</h1>
+    <p class="text-xs md:text-sm text-green-600 font-semibold">Mỗi học sinh là một hạt giống</p></div>
+  </div>
+  <div class="flex gap-2 items-center">
+    <button @click="showViewerLogin=true" class="px-3 py-2 rounded-lg bg-green-50 text-green-700 font-bold text-sm"><i class="fa-solid fa-user-graduate mr-1"></i> Xem điểm</button>
+    <button @click="showTeacherLogin=true" class="px-3 py-2 rounded-lg bg-slate-800 text-white font-bold text-sm"><i class="fa-solid fa-lock mr-1"></i> Giáo viên</button>
+  </div>
+</header>
+
+<div v-if="loading" class="p-8 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải dữ liệu...</div>
+<div v-else-if="errorMessage" class="m-6 p-4 rounded-xl bg-red-50 text-red-700 border border-red-200">{{errorMessage}}</div>
+
+<main v-else class="p-4 md:p-6">
+  <div class="max-w-7xl mx-auto">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div>
+        <h2 class="font-extrabold text-lg text-slate-800">{{ viewerMode ? 'Điểm của em' : (teacherMode ? 'Bảng điểm giáo viên' : 'Khu vườn lớp') }}</h2>
+        <p class="text-xs text-slate-500" v-if="viewerMode">Chế độ chỉ xem — không có quyền chỉnh sửa.</p>
+        <p class="text-xs text-slate-500" v-else-if="teacherMode">Đang đăng nhập chế độ giáo viên. Mọi thay đổi được lưu trên máy chủ.</p>
+        <p class="text-xs text-slate-500" v-else>Học sinh/phụ huynh cần mã + PIN để xem điểm của đúng học sinh.</p>
+      </div>
+      <select v-model="currentViewWeek" class="px-3 py-2 bg-white border rounded-lg font-bold text-sm">
+        <option value="total">Tổng 36 tuần</option>
+        <option v-for="w in 36" :key="w" :value="w">Tuần {{w}}</option>
+      </select>
+    </div>
+
+    <!-- Teacher: all students. Viewer: only one student -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div v-for="student in visibleStudents" :key="student.id"
+           @click="selectStudent(student)"
+           class="bg-white rounded-2xl p-3 cursor-pointer border-2 transition hover:-translate-y-1 hover:shadow-lg"
+           :class="selectedStudent && selectedStudent.id===student.id ? 'border-green-500 shadow-lg' : 'border-transparent shadow'">
+        <div class="text-center text-xs font-bold text-slate-500 truncate">{{student.name}}</div>
+        <div class="h-24 mt-2 rounded-xl bg-gradient-to-b from-sky-50 to-orange-50 flex flex-col items-center justify-end pb-2 relative overflow-hidden">
+          <i :class="[getPlantIcon(displayPoints(student)),getIconColor(displayPoints(student)),'text-4xl z-10']"></i>
+          <div class="w-full h-3 bg-[#8B5A2B] absolute bottom-0"></div>
+        </div>
+        <div class="mt-2 flex justify-between items-center">
+          <span :class="['font-extrabold',getPointsColor(displayPoints(student))]">{{displayPoints(student)}} đ</span>
+          <span class="text-[10px] bg-slate-100 px-2 py-1 rounded-full">{{getPlantStage(displayPoints(student))}}</span>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="teacherMode && selectedStudent" class="mt-6 bg-white rounded-2xl shadow p-5">
+      <div class="flex flex-wrap justify-between items-center gap-3">
+        <div><h3 class="font-extrabold text-lg">{{selectedStudent.name}}</h3>
+          <p class="text-sm text-slate-500">Tuần {{currentViewWeek}}</p></div>
+        <button @click="logoutTeacher" class="px-3 py-2 rounded-lg bg-red-50 text-red-600 font-bold text-sm">Khóa chế độ giáo viên</button>
+      </div>
+      <div class="grid md:grid-cols-2 gap-3 mt-4">
+        <button v-for="a in positiveActions" @click="changePoints(a)" class="p-3 rounded-xl border border-green-200 bg-green-50 hover:bg-green-100 flex justify-between text-left">
+          <span class="font-semibold text-sm">{{a.name}}</span><b class="text-green-700">+{{a.points}}</b>
+        </button>
+        <button v-for="a in negativeActions" @click="changePoints(a)" class="p-3 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 flex justify-between text-left">
+          <span class="font-semibold text-sm">{{a.name}}</span><b class="text-red-700">{{a.points}}</b>
+        </button>
+      </div>
+      <div class="mt-4 flex gap-2">
+        <button @click="reloadTeacherData" class="px-3 py-2 rounded-lg bg-slate-100 font-bold text-sm">Tải lại từ máy chủ</button>
+      </div>
+    </div>
+
+    <div v-if="selectedStudent && !teacherMode" class="mt-6 bg-white rounded-2xl shadow p-5">
+      <h3 class="font-extrabold text-lg">{{selectedStudent.name}}</h3>
+      <p class="text-sm text-slate-500">Chỉ xem. Điểm hiện tại: <b :class="getPointsColor(displayPoints(selectedStudent))">{{displayPoints(selectedStudent)}} điểm</b></p>
+      <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div v-for="w in 36" :key="w" class="p-3 bg-slate-50 rounded-xl border">
+          <div class="text-xs text-slate-500">Tuần {{w}}</div>
+          <div class="font-extrabold text-lg">{{selectedStudent.weeklyPoints[w] || 0}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Viewer login -->
+<div v-if="showViewerLogin" class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+    <h3 class="font-extrabold text-xl mb-1">Xem điểm của học sinh</h3>
+    <p class="text-sm text-slate-500 mb-4">Nhập mã học sinh và PIN do giáo viên cung cấp.</p>
+    <input v-model="viewerCode" placeholder="Mã học sinh, ví dụ HS01" class="w-full border rounded-lg p-3 mb-2">
+    <input v-model="viewerPin" type="password" placeholder="PIN" class="w-full border rounded-lg p-3 mb-4" @keyup.enter="loginViewer">
+    <div class="flex gap-2"><button @click="showViewerLogin=false" class="flex-1 p-3 rounded-lg bg-slate-100 font-bold">Hủy</button>
+    <button @click="loginViewer" class="flex-1 p-3 rounded-lg bg-green-600 text-white font-bold">Xem điểm</button></div>
+  </div>
+</div>
+
+<!-- Teacher login -->
+<div v-if="showTeacherLogin" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+    <h3 class="font-extrabold text-xl mb-1">Đăng nhập giáo viên</h3>
+    <p class="text-sm text-slate-500 mb-4">Mật khẩu không nằm trong mã HTML. Máy chủ mới là nơi kiểm tra mật khẩu.</p>
+    <input v-model="teacherPassword" type="password" placeholder="Mật khẩu giáo viên" class="w-full border rounded-lg p-3 mb-4" @keyup.enter="loginTeacher">
+    <div class="flex gap-2"><button @click="showTeacherLogin=false" class="flex-1 p-3 rounded-lg bg-slate-100 font-bold">Hủy</button>
+    <button @click="loginTeacher" class="flex-1 p-3 rounded-lg bg-slate-800 text-white font-bold">Đăng nhập</button></div>
+  </div>
+</div>
+</div>
+
+<script>
+const {createApp,ref,computed}=Vue;
+
+/* === ĐIỀN URL WEB APP APPS SCRIPT SAU KHI DEPLOY === */
+const API_URL = 'https://script.google.com/macros/s/AKfycbxJKNWi0f4cO25oKCCIfTc-euA7RIfN676evlVSQSnYAFhmcZddROry3BLqdRMOUtpj/exec';
+
+const positiveActions=[
+{name:'Không ăn quà vặt trong trường',points:10},{name:'Đi học đúng giờ',points:1},
+{name:'Chuẩn bị bài tập và dụng cụ đầy đủ',points:5},{name:'Không nói chuyện riêng',points:10},
+{name:'Phát biểu xây dựng bài',points:5},{name:'Có tiến bộ',points:20},{name:'Thuộc bài cũ',points:5},
+{name:'Tác phong nghiêm túc',points:5},{name:'Để xe đúng nơi quy định',points:1},
+{name:'Không ra khỏi chỗ ngồi trong 5 phút chuyển tiết',points:5}];
+const negativeActions=[
+{name:'Đi trễ',points:-2},{name:'Tác phong không đúng',points:-2},
+{name:'Ra khỏi lớp trong giờ chuyển tiết',points:-2},{name:'Ra khỏi trường trong giờ chính khóa',points:-5},
+{name:'Nói chuyện riêng',points:-10},{name:'Trực nhật trễ',points:-5},{name:'Mang thức ăn vào trường',points:-5},
+{name:'Mang đồ nhựa dùng một lần',points:-20},{name:'Để xe đạp không đúng quy định',points:-5},
+{name:'Bỏ tiết sinh hoạt dưới cờ/chủ điểm',points:-10},{name:'Tập hợp chậm/mất trật tự',points:-5},
+{name:'Làm hư hỏng tài sản/vẽ bậy',points:-10},{name:'Mang vật dụng nguy hiểm',points:-10},
+{name:'Vô lễ với thầy cô',points:-10},{name:'Không đội mũ bảo hiểm',points:-20},
+{name:'Gây gổ đánh nhau',points:-20},{name:'Mang điện thoại đến lớp/vi phạm giao thông',points:-20},
+{name:'Không thuộc bài cũ/không làm bài tập',points:-5}];
+
+createApp({
+setup(){
+ const students=ref([]),selectedStudent=ref(null),currentViewWeek=ref('total');
+ const loading=ref(true),errorMessage=ref('');
+ const showViewerLogin=ref(false),showTeacherLogin=ref(false);
+ const viewerCode=ref(''),viewerPin=ref(''),teacherPassword=ref('');
+ const viewerMode=ref(false),teacherMode=ref(false),teacherToken=ref('');
+
+ const jsonp=(params)=>new Promise((resolve,reject)=>{
+   if(!API_URL || API_URL.startsWith('DAN_')) return reject(new Error('Chưa cấu hình API_URL trong index.html'));
+   const cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2);
+   const s=document.createElement('script');
+   const q=new URLSearchParams({...params,callback:cb});
+   const timer=setTimeout(()=>{cleanup();reject(new Error('Máy chủ không phản hồi.'))},15000);
+   function cleanup(){clearTimeout(timer);delete window[cb];s.remove()}
+   window[cb]=(data)=>{cleanup(); if(data && data.ok) resolve(data); else reject(new Error(data?.message||'Yêu cầu thất bại'))};
+   s.src=API_URL+'?'+q.toString(); s.onerror=()=>{cleanup();reject(new Error('Không kết nối được máy chủ.'))};
+   document.body.appendChild(s);
+ });
+ const post=(params)=>fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:new URLSearchParams(params)}).then(()=>({ok:true}));
+
+ const loadPublic=async()=>{loading.value=false};
+ const loginViewer=async()=>{
+   try{
+     const d=await jsonp({action:'viewer',code:viewerCode.value.trim().toUpperCase(),pin:viewerPin.value.trim()});
+     students.value=[d.student]; selectedStudent.value=d.student; viewerMode.value=true; teacherMode.value=false; showViewerLogin.value=false;
+   }catch(e){alert(e.message)}
+ };
+ const loginTeacher=async()=>{
+   try{
+     const d=await jsonp({action:'teacherLogin',password:teacherPassword.value});
+     if(!d.ok) throw new Error(d.message||'Mật khẩu không đúng');
+     teacherToken.value=d.token; teacherMode.value=true; viewerMode.value=false; showTeacherLogin.value=false;
+     teacherPassword.value=''; await reloadTeacherData();
+   }catch(e){alert(e.message)}
+ };
+ const reloadTeacherData=async()=>{
+   try{const d=await jsonp({action:'teacherData',token:teacherToken.value});students.value=d.students;selectedStudent.value=students.value[0]||null}
+   catch(e){alert('Không tải được dữ liệu giáo viên: '+e.message)}
+ };
+ const logoutTeacher=()=>{teacherMode.value=false;teacherToken.value='';selectedStudent.value=null;students.value=[]};
+ const selectStudent=s=>selectedStudent.value=s;
+ const displayPoints=s=>{
+   if(currentViewWeek.value==='total') return Object.values(s.weeklyPoints||{}).reduce((a,b)=>a+Number(b||0),0);
+   return Number((s.weeklyPoints||{})[currentViewWeek.value]||0);
+ };
+ const changePoints=async action=>{
+   if(!teacherMode.value||!selectedStudent.value||currentViewWeek.value==='total'){alert('Hãy chọn một tuần cụ thể để nhập điểm.');return}
+   const old=JSON.parse(JSON.stringify(selectedStudent.value));
+   const w=Number(currentViewWeek.value);
+   selectedStudent.value.weeklyPoints[w]=(selectedStudent.value.weeklyPoints[w]||0)+action.points;
+   try{
+     await post({action:'changePoints',token:teacherToken.value,studentId:selectedStudent.value.id,week:w,points:action.points,reason:action.name});
+     // Sau khi đăng nhập, mật khẩu không được lưu lại trong UI; server vẫn cần xác thực.
+     // Vì vậy giáo viên nhập mật khẩu lại khi cần ghi điểm.
+     alert('Đã gửi thay đổi. Điểm được lưu trên máy chủ.');
+   }catch(e){selectedStudent.value=old;alert('Không gửi được thay đổi.')}
+ };
+ const getPlantStage=p=>p<=20?'Hạt giống':p<=40?'Nảy mầm':p<=60?'Cây non':p<=80?'Cây phát triển':'Trưởng thành';
+ const getPlantIcon=p=>p<=20?'fa-solid fa-seedling':p<=40?'fa-solid fa-leaf':p<=60?'fa-brands fa-envira':'fa-solid fa-tree';
+ const getIconColor=p=>p<=20?'text-amber-700':p<=40?'text-lime-500':p<=60?'text-green-500':p<=80?'text-green-700':'text-emerald-800';
+ const getPointsColor=p=>p<0?'text-red-500':p<=20?'text-orange-700':p<=40?'text-amber-600':p<=60?'text-lime-600':p<=80?'text-green-600':'text-emerald-700';
+ const visibleStudents=computed(()=>students.value);
+ loadPublic();
+ return {students,selectedStudent,currentViewWeek,loading,errorMessage,showViewerLogin,showTeacherLogin,viewerCode,viewerPin,teacherPassword,viewerMode,teacherMode,teacherToken,
+ positiveActions,negativeActions,visibleStudents,loginViewer,loginTeacher,reloadTeacherData,logoutTeacher,selectStudent,displayPoints,changePoints,
+ getPlantStage,getPlantIcon,getIconColor,getPointsColor};
+}
+}).mount('#app');
+</script>
+</body>
+</html>
